@@ -1,0 +1,24 @@
+name: Build PSP EBOOT
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with pspdev (Docker)
+        run: docker run --rm -v "$PWD":/src -w /src pspdev/pspdev make
+
+      - name: Pack for memory stick
+        run: |
+          mkdir -p out/PSP/GAME/HamletTD
+          cp EBOOT.PBP out/PSP/GAME/HamletTD/EBOOT.PBP
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HamletTD-PSP
+          path: out
