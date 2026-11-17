@@ -1,5 +1,5 @@
-/*
- * COAST ENGINE v0.5 TD COMPLETE + WORLD
+*
+ * COAST ENGINE v1.0 ULTIMATE FOUNDATION + WORLD + TD
  * PSP single-file engine expansion
  *
  * World system:
@@ -35,12 +35,12 @@
 #include <math.h>
 #include <malloc.h>
 
-PSP_MODULE_INFO("COAST ENGINE TD BIG PORT", 0, 5, 0);
+PSP_MODULE_INFO("HAMLET TD v1.0", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 PSP_HEAP_SIZE_KB(-256);
 
-#define CE_VERSION_MAJOR 0
-#define CE_VERSION_MINOR 5
+#define CE_VERSION_MAJOR 1
+#define CE_VERSION_MINOR 0
 
 #define CE_SCREEN_W 480
 #define CE_SCREEN_H 272
@@ -202,6 +202,44 @@ static void CE_DrawRect(float x, float y, float w, float h, unsigned int color) 
     sceGuColor(color);
     sceGuDrawArray(GU_TRIANGLE_STRIP,
         GU_VERTEX_16BIT | GU_TRANSFORM_2D, 4, 0, v);
+}
+
+/* Tiny 5x7 bitmap font: deliberately texture-free and PSP-friendly. */
+static const unsigned char CE_Font5x7[36][7] = {
+ {14,17,19,21,25,17,14},{4,12,4,4,4,4,14},{14,17,1,2,4,8,31},{30,1,1,14,1,1,30},
+ {2,6,10,18,31,2,2},{31,16,16,30,1,1,30},{6,8,16,30,17,17,14},{31,1,2,4,8,8,8},
+ {14,17,17,14,17,17,14},{14,17,17,15,1,2,12},
+ {14,17,17,31,17,17,17},{30,17,17,30,17,17,30},{14,17,16,16,16,17,14},
+ {28,18,17,17,17,18,28},{31,16,16,30,16,16,31},{31,16,16,30,16,16,16},
+ {14,17,16,23,17,17,15},{17,17,17,31,17,17,17},{14,4,4,4,4,4,14},
+ {7,2,2,2,2,18,12},{17,18,20,24,20,18,17},{16,16,16,16,16,16,31},
+ {17,27,21,21,17,17,17},{17,25,21,19,17,17,17},{14,17,17,17,17,17,14},
+ {30,17,17,30,16,16,16},{14,17,17,17,21,18,13},{30,17,17,30,20,18,17},
+ {15,16,16,14,1,1,30},{31,4,4,4,4,4,4},{17,17,17,17,17,17,14},
+ {17,17,17,17,17,10,4},{17,17,17,21,21,21,10},{17,17,10,4,10,17,17},
+ {17,17,10,4,4,4,4},{31,1,2,4,8,16,31}
+};
+static int CE_FontIndex(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'Z') return 10 + c - 'A';
+    if (c >= 'a' && c <= 'z') return 10 + c - 'a';
+    return -1;
+}
+static void CE_DrawText(float x, float y, const char *str, float scale, unsigned int color) {
+    while (*str) {
+        int g = CE_FontIndex(*str++), row, col;
+        if (g < 0) { x += 4.0f * scale; continue; }
+        for (row=0; row<7; ++row) for (col=0; col<5; ++col)
+            if (CE_Font5x7[g][row] & (1u << (4-col)))
+                CE_DrawRect(x+col*scale, y+row*scale, scale, scale, color);
+        x += 6.0f * scale;
+    }
+}
+static void CE_DrawNumber(float x, float y, int value, float scale, unsigned int color) {
+    char buf[16]; int n=0, i;
+    if (value < 0) { CE_DrawText(x,y,"-",scale,color); x += 6*scale; value=-value; }
+    do { buf[n++] = (char)('0' + value%10); value/=10; } while(value && n<14);
+    for(i=n-1;i>=0;--i) { char one[2]={buf[i],0}; CE_DrawText(x,y,one,scale,color); x+=6*scale; }
 }
 
 /* World and chunk helpers. */
@@ -669,7 +707,7 @@ static void CE_Render(void) {
 #define TD_TOP 24.0f
 #define TD_TOWER_COUNT 188
 #define TD_ENEMY_TYPES ENEMY_TYPE_COUNT
-#define TD_SAVE_PATH "ms0:/COAST_TD_V05.DAT"
+#define TD_SAVE_PATH "ms0:/HAMLET_TD_V10.DAT"
 
 enum { TD_E_ARMORED=1,TD_E_GHOST=2,TD_E_INVISIBLE=4,TD_E_HEALER=8,TD_E_BOSS=16,TD_E_SPLIT=32,TD_E_THIEF=64,TD_E_ICE=128 };
 enum { TD_RUNE_DAMAGE=0,TD_RUNE_RANGE=1,TD_RUNE_RATE=2,TD_RUNE_CRIT=3,TD_RUNE_SPLASH=4,TD_RUNE_GOLD=5 };
@@ -1033,7 +1071,83 @@ for(i=0;i<TD_MAX_TOWERS;i++)if(td_towers[i].active){TD_Tower*t=&td_towers[i];int
 for(i=0;i<TD_MAX_SHOTS;i++)if(td_shots[i].active){TD_Shot*s=&td_shots[i];if(s->target<0||s->target>=TD_MAX_ENEMIES||!td_enemies[s->target].active){s->active=0;continue;}{TD_Enemy*e=&td_enemies[s->target];float dx=e->x-s->x,dy=e->y-s->y,d=sqrtf(dx*dx+dy*dy),step=s->speed*dt;if(d<=step+e->x*0.0f+4){int damage=(int)s->damage;if(e->flags&TD_E_ARMORED)damage=(damage*85)/100;if(damage<1)damage=1;e->hp-=damage;if(s->flags&TD_SHOT_SLOW)e->slowTimer=1.5f;if(s->flags&TD_SHOT_BURN){e->burnTimer=2.5f;e->burnDmg=4;}if(s->flags&TD_SHOT_POISON){e->poisonTimer=3;e->poisonDmg=3;}if(s->flags&TD_SHOT_SPLASH){float rad=s->splash>0?s->splash:44.0f;for(j=0;j<TD_MAX_ENEMIES;j++)if(j!=s->target&&td_enemies[j].active&&TD_Dist(e->x,e->y,td_enemies[j].x,td_enemies[j].y)<rad)td_enemies[j].hp-=damage/2;}if(s->flags&TD_SHOT_PIERCE){s->target=-1;s->active=0;}else s->active=0;}else if(d>0.01f){s->x+=dx/d*step;s->y+=dy/d*step;}}}
 if(td_spawnLeft==0&&TD_AliveEnemies()==0&&td_wave>0&&!td_waveComplete){td_waveComplete=1;if(!td_waveLeak)td_challengeValue[4]++;if(td_modeIndex==12){td_campaignRegion=(td_wave-1)/10;if(td_wave>=100)td_game_over=1;else td_money+=100;}}if(td_wave>td_bestWave)td_bestWave=td_wave;TD_ChallengeUpdate();}
 static void TD_DrawPath(void){int i,n=TD_PathCount();for(i=0;i<n-1;i++){float ax,ay,bx,by;if(td_mapIndex==20){ax=td_customX[i]*TD_CELL_W+12;ay=TD_TOP+td_customY[i]*TD_CELL_H+8;bx=td_customX[i+1]*TD_CELL_W+12;by=TD_TOP+td_customY[i+1]*TD_CELL_H+8;}else{TD_GetPathPoint(i,&ax,&ay);TD_GetPathPoint(i+1,&bx,&by);}if(fabsf(ax-bx)<1)CE_DrawRect(ax-5,ay<by?ay:by,10,fabsf(by-ay),GU_COLOR(110,103,85,255));else CE_DrawRect(ax<bx?ax:bx,ay-5,fabsf(bx-ax),10,GU_COLOR(110,103,85,255));}}
-static void TD_Render(void){int i;unsigned int bg=GU_COLOR(38,82,55,255);if(td_mapIndex==7)bg=GU_COLOR(60,42,39,255);if(td_mapIndex==8)bg=GU_COLOR(170,205,215,255);if(td_mapIndex==9)bg=GU_COLOR(35,105,65,255);sceGuStart(GU_DIRECT,g_displayList);sceGuClearColor(bg);sceGuClear(GU_COLOR_BUFFER_BIT);for(i=0;i<15;i++)CE_DrawRect(0,TD_TOP+i*TD_CELL_H,480,1,GU_COLOR(255,255,255,14));for(i=0;i<20;i++)CE_DrawRect(i*TD_CELL_W,TD_TOP,1,240,GU_COLOR(255,255,255,14));TD_DrawPath();for(i=0;i<TD_MAX_TOWERS;i++)if(td_towers[i].active){TD_Tower*t=&td_towers[i];unsigned int col=GU_COLOR(75+(t->type*31)%170,100+(t->type*47)%130,155+(t->type*19)%90,255);CE_DrawRect(t->x-6,t->y-6,12,12,col);if(i==td_selected)CE_DrawRect(t->x-9,t->y-9,18,2,GU_COLOR(255,245,120,255));CE_DrawRect(t->x-6,t->y+7,12,2,GU_COLOR(20,20,20,255));CE_DrawRect(t->x-6,t->y+7,12.0f*t->level/10,2,GU_COLOR(255,220,70,255));if(t->runeCount)CE_DrawRect(t->x-2,t->y-2,4,4,GU_COLOR(220,160,255,255));}for(i=0;i<TD_MAX_ENEMIES;i++)if(td_enemies[i].active){TD_Enemy*e=&td_enemies[i];unsigned int col=(e->flags&TD_E_BOSS)?GU_COLOR(230,55,65,255):((e->flags&TD_E_INVISIBLE)?GU_COLOR(180,190,210,100):GU_COLOR(175,75,65,255));CE_DrawRect(e->x-4,e->y-4,8,8,col);CE_DrawRect(e->x-5,e->y-7,10,2,GU_COLOR(30,20,20,255));CE_DrawRect(e->x-5,e->y-7,10.0f*TD_Clamp((float)e->hp/e->maxHp,0,1),2,GU_COLOR(90,230,110,255));}for(i=0;i<TD_MAX_SHOTS;i++)if(td_shots[i].active)CE_DrawRect(td_shots[i].x-2,td_shots[i].y-2,4,4,GU_COLOR(255,230,100,255));CE_DrawRect(0,0,480,23,GU_COLOR(8,14,24,245));CE_DrawRect(8,7,TD_Clamp((float)td_lives,0,50)*2,7,GU_COLOR(235,70,80,255));CE_DrawRect(115,7,TD_Clamp((float)td_money,0,1000)*.25f,7,GU_COLOR(245,190,55,255));CE_DrawRect(380,7,TD_Clamp((float)td_wave,0,50)*1.6f,7,GU_COLOR(80,170,245,255));CE_DrawRect(0,264,480,8,GU_COLOR(8,14,24,240));CE_DrawRect(6,266,12,3,GU_COLOR(90,220,145,255));CE_DrawRect(24,266,12,3,GU_COLOR(90,170,245,255));CE_DrawRect(42,266,12,3,GU_COLOR(245,195,75,255));CE_DrawRect(60,266,12,3,GU_COLOR(240,105,90,255));/* Cursor */CE_DrawRect(td_cursorX*TD_CELL_W+2,TD_TOP+td_cursorY*TD_CELL_H+2,20,12,GU_COLOR(255,255,255,55));if(td_menu){CE_DrawRect(70,55,340,150,GU_COLOR(10,18,32,245));CE_DrawRect(90,78,300,4,GU_COLOR(70,190,220,255));CE_DrawRect(90,112,300,3,GU_COLOR(255,205,80,255));CE_DrawRect(90,145,300,3,GU_COLOR(110,220,150,255));}if(td_paused)CE_DrawRect(160,110,160,45,GU_COLOR(20,30,50,235));if(td_game_over)CE_DrawRect(145,105,190,55,GU_COLOR(120,25,35,245));if(td_editor)CE_DrawRect(4,28,472,18,GU_COLOR(25,40,70,230));sceGuFinish();sceGuSync(0,0);sceDisplayWaitVblankStart();sceGuSwapBuffers();}
+static void TD_Render(void) {
+    int i;
+    unsigned int bg=GU_COLOR(38,82,55,255);
+    if(td_mapIndex==7) bg=GU_COLOR(60,42,39,255);
+    if(td_mapIndex==8) bg=GU_COLOR(170,205,215,255);
+    if(td_mapIndex==9) bg=GU_COLOR(35,105,65,255);
+    sceGuStart(GU_DIRECT,g_displayList);
+    sceGuClearColor(bg); sceGuClear(GU_COLOR_BUFFER_BIT);
+    for(i=0;i<15;i++) CE_DrawRect(0,TD_TOP+i*TD_CELL_H,480,1,GU_COLOR(255,255,255,14));
+    for(i=0;i<20;i++) CE_DrawRect(i*TD_CELL_W,TD_TOP,1,240,GU_COLOR(255,255,255,14));
+    TD_DrawPath();
+    for(i=0;i<TD_MAX_TOWERS;i++) if(td_towers[i].active) {
+        TD_Tower*t=&td_towers[i];
+        unsigned int col=GU_COLOR(75+(t->type*31)%170,100+(t->type*47)%130,155+(t->type*19)%90,255);
+        CE_DrawRect(t->x-6,t->y-6,12,12,col);
+        if(i==td_selected) CE_DrawRect(t->x-9,t->y-9,18,2,GU_COLOR(255,245,120,255));
+        CE_DrawRect(t->x-6,t->y+7,12,2,GU_COLOR(20,20,20,255));
+        CE_DrawRect(t->x-6,t->y+7,12.0f*t->level/10,2,GU_COLOR(255,220,70,255));
+        if(t->runeCount) CE_DrawRect(t->x-2,t->y-2,4,4,GU_COLOR(220,160,255,255));
+    }
+    for(i=0;i<TD_MAX_ENEMIES;i++) if(td_enemies[i].active) {
+        TD_Enemy*e=&td_enemies[i];
+        unsigned int col=(e->flags&TD_E_BOSS)?GU_COLOR(230,55,65,255):((e->flags&TD_E_INVISIBLE)?GU_COLOR(180,190,210,100):GU_COLOR(175,75,65,255));
+        CE_DrawRect(e->x-4,e->y-4,8,8,col);
+        CE_DrawRect(e->x-5,e->y-7,10,2,GU_COLOR(30,20,20,255));
+        CE_DrawRect(e->x-5,e->y-7,10.0f*TD_Clamp((float)e->hp/e->maxHp,0,1),2,GU_COLOR(90,230,110,255));
+    }
+    for(i=0;i<TD_MAX_SHOTS;i++) if(td_shots[i].active) CE_DrawRect(td_shots[i].x-2,td_shots[i].y-2,4,4,GU_COLOR(255,230,100,255));
+    /* Readable native HUD. */
+    CE_DrawRect(0,0,480,23,GU_COLOR(8,14,24,245));
+    CE_DrawText(7,5,"HP",1,GU_COLOR(255,255,255,255));
+    CE_DrawNumber(25,5,td_lives,1,GU_COLOR(255,115,120,255));
+    CE_DrawText(88,5,"GOLD",1,GU_COLOR(255,220,120,255));
+    CE_DrawNumber(116,5,td_money,1,GU_COLOR(255,255,255,255));
+    CE_DrawText(300,5,"WAVE",1,GU_COLOR(160,210,255,255));
+    CE_DrawNumber(333,5,td_wave,1,GU_COLOR(255,255,255,255));
+    CE_DrawRect(0,264,480,8,GU_COLOR(8,14,24,240));
+    CE_DrawText(6,265,"X BUILD",1,GU_COLOR(100,235,160,255));
+    CE_DrawText(75,265,"O WAVE",1,GU_COLOR(130,190,255,255));
+    CE_DrawText(145,265,"L RUNE",1,GU_COLOR(235,180,255,255));
+    CE_DrawText(225,265,"SEL MENU",1,GU_COLOR(255,220,130,255));
+    CE_DrawRect(td_cursorX*TD_CELL_W+2,TD_TOP+td_cursorY*TD_CELL_H+2,20,12,GU_COLOR(255,255,255,55));
+    if(td_menu) {
+        CE_DrawRect(44,36,392,194,GU_COLOR(7,13,27,248));
+        CE_DrawRect(55,48,370,3,GU_COLOR(65,190,225,255));
+        CE_DrawText(139,60,"HAMLET TD",2,GU_COLOR(255,225,135,255));
+        CE_DrawText(82,91,"COAST ENGINE V1.0",1,GU_COLOR(130,215,245,255));
+        CE_DrawText(70,116,"MODE",1,GU_COLOR(170,190,220,255));
+        CE_DrawText(130,116,"LEFT RIGHT",1,GU_COLOR(255,255,255,255));
+        CE_DrawNumber(365,116,td_modeIndex+1,1,GU_COLOR(255,220,110,255));
+        CE_DrawText(70,132,"MAP",1,GU_COLOR(170,190,220,255));
+        CE_DrawNumber(130,132,td_mapIndex+1,1,GU_COLOR(255,255,255,255));
+        CE_DrawText(70,148,"UP DOWN SELECT MAP",1,GU_COLOR(210,220,235,255));
+        CE_DrawRect(65,166,350,1,GU_COLOR(80,110,145,255));
+        CE_DrawText(70,178,"X START GAME",1,GU_COLOR(105,245,155,255));
+        CE_DrawText(235,178,"O LOAD SAVE",1,GU_COLOR(255,215,115,255));
+        CE_DrawText(70,194,"TRIANGLE MAP EDITOR",1,GU_COLOR(150,195,255,255));
+        CE_DrawText(70,211,"START PAUSE   SELECT MENU",1,GU_COLOR(160,175,200,255));
+    }
+    if(td_paused) {
+        CE_DrawRect(145,103,190,62,GU_COLOR(8,14,28,245));
+        CE_DrawText(205,116,"PAUSED",2,GU_COLOR(255,220,120,255));
+        CE_DrawText(170,143,"START RESUME",1,GU_COLOR(255,255,255,255));
+    }
+    if(td_game_over) {
+        CE_DrawRect(130,99,220,72,GU_COLOR(65,12,24,248));
+        CE_DrawText(174,111,"GAME OVER",2,GU_COLOR(255,130,130,255));
+        CE_DrawText(169,139,"WAVE",1,GU_COLOR(255,255,255,255));
+        CE_DrawNumber(205,139,td_wave,1,GU_COLOR(255,220,120,255));
+        CE_DrawText(159,154,"SELECT MENU",1,GU_COLOR(255,255,255,255));
+    }
+    if(td_editor) {
+        CE_DrawRect(4,28,472,18,GU_COLOR(25,40,70,230));
+        CE_DrawText(12,33,"EDITOR X ADD O FINISH TRI CLEAR",1,GU_COLOR(255,255,255,255));
+    }
+    sceGuFinish(); sceGuSync(0,0); sceDisplayWaitVblankStart(); sceGuSwapBuffers();
+}
 
 
 /* Core timing and startup. */
@@ -1060,7 +1174,7 @@ static void CE_Init(void) {
     CE_WorldInit();
     TD_InitDefs();
     td_towerCount=0; td_enemyCount=ENEMY_TYPE_COUNT;
-    td_menu=0; td_modeIndex=1; td_mapIndex=0;
+    td_menu=1; td_modeIndex=1; td_mapIndex=0;
     td_customCount=0; td_campaignRegion=0; td_bestWave=0;
     td_rng=(unsigned int)sceKernelGetSystemTimeLow();
     TD_ResetGame();
