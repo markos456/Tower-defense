@@ -1,5 +1,5 @@
 /*
- * COAST ENGINE v0.3 WORLD
+ * COAST ENGINE v0.4 TD CORE + WORLD
  * PSP single-file engine expansion
  *
  * World system:
@@ -35,12 +35,12 @@
 #include <math.h>
 #include <malloc.h>
 
-PSP_MODULE_INFO("COAST ENGINE", 0, 3, 0);
+PSP_MODULE_INFO("COAST ENGINE TD", 0, 4, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 PSP_HEAP_SIZE_KB(-256);
 
 #define CE_VERSION_MAJOR 0
-#define CE_VERSION_MINOR 3
+#define CE_VERSION_MINOR 4
 
 #define CE_SCREEN_W 480
 #define CE_SCREEN_H 272
@@ -120,6 +120,7 @@ static CE_State g_state;
 static float g_cameraX, g_cameraY;
 static unsigned long long g_lastTime;
 static int g_running = 1;
+static int td_mode = 1;
 static int g_editor = 0;
 static int g_cursorX = 32, g_cursorY = 32;
 static int g_selectedTile = CE_TILE_WALL;
@@ -351,6 +352,10 @@ static void CE_InputUpdate(void) {
     }
 
     if (CE_ButtonPressed(PSP_CTRL_SELECT)) {
+        if (!td_mode && !g_editor) {
+            td_mode = 1;
+            return;
+        }
         g_editor = !g_editor;
         if (g_playerIndex >= 0) {
             CE_Object *pl = &g_objects[g_playerIndex];
@@ -646,6 +651,267 @@ static void CE_Render(void) {
     sceGuSwapBuffers();
 }
 
+
+/* -------------------------------------------------------------------------- */
+/* COAST ENGINE TD CORE v0.4                                                  */
+/* First native PSP tower-defense gameplay slice.                             */
+/* -------------------------------------------------------------------------- */
+#define TD_MAX_TOWERS 16
+#define TD_MAX_ENEMIES 48
+#define TD_MAX_SHOTS 64
+#define TD_PAD_COUNT 8
+
+typedef struct {
+    int active, level, type;
+    float x, y, cooldown, range, damage, rate;
+} TD_Tower;
+
+typedef struct {
+    int active, hp, maxHp, waypoint;
+    float x, y, speed;
+} TD_Enemy;
+
+typedef struct {
+    int active, target;
+    float x, y, speed, damage;
+} TD_Shot;
+
+static TD_Tower td_towers[TD_MAX_TOWERS];
+static TD_Enemy td_enemies[TD_MAX_ENEMIES];
+static TD_Shot td_shots[TD_MAX_SHOTS];
+static const float td_pad_x[TD_PAD_COUNT] = {52, 145, 205, 310, 355, 445, 165, 285};
+static const float td_pad_y[TD_PAD_COUNT] = {135, 35, 235, 145, 35, 155, 115, 225};
+static const float td_path_x[8] = {-18, 112, 112, 258, 258, 398, 398, 500};
+static const float td_path_y[8] = {82, 82, 192, 192, 92, 92, 222, 222};
+static int td_cursor, td_selected = -1, td_wave, td_money, td_lives;
+static int td_spawn_left, td_spawned, td_kills, td_game_over;
+static float td_spawn_timer, td_wave_timer, td_clock;
+static float TD_Clamp(float v, float a, float b) {
+    return v < a ? a : (v > b ? b : v);
+}
+static float TD_Dist(float ax, float ay, float bx, float by) {
+    float dx=ax-bx, dy=ay-by;
+    return sqrtf(dx*dx+dy*dy);
+}
+static void TD_Init(void) {
+    memset(td_towers,0,sizeof(td_towers));
+    memset(td_enemies,0,sizeof(td_enemies));
+    memset(td_shots,0,sizeof(td_shots));
+    td_cursor=0; td_selected=-1; td_wave=0; td_money=180; td_lives=20;
+    td_spawn_left=td_spawned=td_kills=td_game_over=0;
+    td_spawn_timer=td_wave_timer=td_clock=0;
+}
+static int TD_AddEnemy(void) {
+    int i;
+    for(i=0;i<TD_MAX_ENEMIES;i++) if(!td_enemies[i].active) {
+        TD_Enemy *e=&td_enemies[i];
+        memset(e,0,sizeof(*e)); e->active=1;
+        e->x=td_path_x[0]; e->y=td_path_y[0];
+        e->waypoint=1; e->speed=34.0f+(float)(td_wave>10?10:td_wave)*1.4f;
+        e->maxHp=e->hp=24+td_wave*9;
+        return i;
+    }
+    return -1;
+}
+static int TD_AddShot(float x,float y,int target,float damage) {
+    int i;
+    for(i=0;i<TD_MAX_SHOTS;i++) if(!td_shots[i].active) {
+        td_shots[i].active=1; td_shots[i].x=x; td_shots[i].y=y;
+        td_shots[i].target=target; td_shots[i].damage=damage;
+        td_shots[i].speed=260.0f; return i;
+    }
+    return -1;
+}
+static void TD_StartWave(void) {
+    if(td_game_over || td_spawn_left>0) return;
+    {
+        int i, alive=0;
+        for(i=0;i<TD_MAX_ENEMIES;i++) if(td_enemies[i].active) alive++;
+        if(alive) return;
+    }
+    td_wave++;
+    td_spawn_left=5+td_wave*2;
+    if(td_spawn_left>34) td_spawn_left=34;
+    td_spawned=0; td_spawn_timer=0.2f; td_wave_timer=0;
+    td_money+=20+td_wave*3;
+}
+static void TD_PlaceTower(void) {
+    int i, slot=-1;
+    if(td_game_over || td_money<60) return;
+    for(i=0;i<TD_MAX_TOWERS;i++) if(!td_towers[i].active) {slot=i;break;}
+    if(slot<0) return;
+    /* One tower per pad. */
+    for(i=0;i<TD_MAX_TOWERS;i++)
+        if(td_towers[i].active &&
+           TD_Dist(td_towers[i].x,td_towers[i].y,td_pad_x[td_cursor],td_pad_y[td_cursor])<2.0f)
+            return;
+    td_towers[slot].active=1; td_towers[slot].level=1;
+    td_towers[slot].type=td_cursor%3;
+    td_towers[slot].x=td_pad_x[td_cursor]; td_towers[slot].y=td_pad_y[td_cursor];
+    td_towers[slot].cooldown=0; td_towers[slot].range=105.0f;
+    td_towers[slot].damage=td_towers[slot].type==0?13.0f:(td_towers[slot].type==1?7.0f:23.0f);
+    td_towers[slot].rate=td_towers[slot].type==1?0.38f:(td_towers[slot].type==2?1.15f:0.72f);
+    td_money-=60; td_selected=slot;
+}
+static void TD_Upgrade(void) {
+    TD_Tower *t;
+    int cost;
+    if(td_selected<0 || td_selected>=TD_MAX_TOWERS) return;
+    t=&td_towers[td_selected]; if(!t->active || t->level>=5) return;
+    cost=55*t->level; if(td_money<cost) return;
+    td_money-=cost; t->level++; t->damage*=1.42f;
+    t->range+=9.0f; t->rate*=0.90f;
+}
+static void TD_Sell(void) {
+    if(td_selected<0 || td_selected>=TD_MAX_TOWERS) return;
+    if(td_towers[td_selected].active) {
+        td_money+=30*td_towers[td_selected].level;
+        memset(&td_towers[td_selected],0,sizeof(TD_Tower));
+    }
+    td_selected=-1;
+}
+static void TD_Input(void) {
+    SceCtrlData p;
+    g_state.previousButtons=g_state.buttons;
+    sceCtrlPeekBufferPositive(&p,1); g_state.buttons=p.Buttons;
+    if(CE_ButtonPressed(PSP_CTRL_START)){g_running=0;return;}
+    if(CE_ButtonPressed(PSP_CTRL_SELECT)){td_mode=0;g_editor=1;return;}
+    if(p.Buttons & PSP_CTRL_LEFT) { if(CE_ButtonPressed(PSP_CTRL_LEFT)) td_cursor=(td_cursor+TD_PAD_COUNT-1)%TD_PAD_COUNT; }
+    if(p.Buttons & PSP_CTRL_RIGHT){ if(CE_ButtonPressed(PSP_CTRL_RIGHT)) td_cursor=(td_cursor+1)%TD_PAD_COUNT; }
+    if(CE_ButtonPressed(PSP_CTRL_UP)) td_cursor=(td_cursor+TD_PAD_COUNT-1)%TD_PAD_COUNT;
+    if(CE_ButtonPressed(PSP_CTRL_DOWN)) td_cursor=(td_cursor+1)%TD_PAD_COUNT;
+    if(CE_ButtonPressed(PSP_CTRL_CROSS)) TD_PlaceTower();
+    if(CE_ButtonPressed(PSP_CTRL_CIRCLE)) TD_StartWave();
+    if(CE_ButtonPressed(PSP_CTRL_SQUARE)) TD_Upgrade();
+    if(CE_ButtonPressed(PSP_CTRL_TRIANGLE)) TD_Sell();
+    if(CE_ButtonPressed(PSP_CTRL_LTRIGGER) || CE_ButtonPressed(PSP_CTRL_RTRIGGER)) {
+        int i,best=-1; float bd=99999.0f;
+        for(i=0;i<TD_MAX_TOWERS;i++) if(td_towers[i].active) {
+            float d=TD_Dist(td_towers[i].x,td_towers[i].y,td_pad_x[td_cursor],td_pad_y[td_cursor]);
+            if(d<bd){bd=d;best=i;}
+        }
+        td_selected=best;
+    }
+}
+static void TD_Update(float dt) {
+    int i,j;
+    if(td_game_over) return;
+    td_clock+=dt;
+    if(td_spawn_left>0) {
+        td_spawn_timer-=dt;
+        if(td_spawn_timer<=0) {
+            if(TD_AddEnemy()>=0){td_spawn_left--;td_spawned++;}
+            td_spawn_timer=0.78f;
+        }
+    }
+    for(i=0;i<TD_MAX_ENEMIES;i++) if(td_enemies[i].active) {
+        TD_Enemy *e=&td_enemies[i];
+        float tx=td_path_x[e->waypoint], ty=td_path_y[e->waypoint];
+        float dx=tx-e->x,dy=ty-e->y,d=sqrtf(dx*dx+dy*dy);
+        if(d<3.0f) {
+            e->waypoint++;
+            if(e->waypoint>=8){e->active=0;td_lives--;if(td_lives<=0)td_game_over=1;continue;}
+        } else if(d>0.001f) {
+            float step=e->speed*dt;
+            if(step>d)step=d;
+            e->x+=(dx/d)*step;e->y+=(dy/d)*step;
+        }
+    }
+    for(i=0;i<TD_MAX_TOWERS;i++) if(td_towers[i].active) {
+        TD_Tower *t=&td_towers[i]; int target=-1; float best=-1;
+        t->cooldown-=dt;
+        if(t->cooldown>0)continue;
+        for(j=0;j<TD_MAX_ENEMIES;j++) if(td_enemies[j].active) {
+            float d=TD_Dist(t->x,t->y,td_enemies[j].x,td_enemies[j].y);
+            if(d<=t->range && (target<0 || td_enemies[j].waypoint>best)) {
+                target=j;best=(float)td_enemies[j].waypoint;
+            }
+        }
+        if(target>=0 && TD_AddShot(t->x,t->y,target,t->damage)>=0)t->cooldown=t->rate;
+    }
+    for(i=0;i<TD_MAX_SHOTS;i++) if(td_shots[i].active) {
+        TD_Shot *s=&td_shots[i];
+        if(s->target<0 || s->target>=TD_MAX_ENEMIES || !td_enemies[s->target].active){s->active=0;continue;}
+        {
+            TD_Enemy *e=&td_enemies[s->target];
+            float dx=e->x-s->x,dy=e->y-s->y,d=sqrtf(dx*dx+dy*dy);
+            float step=s->speed*dt;
+            if(d<=step+4.0f) {
+                e->hp-=(int)s->damage;s->active=0;
+                if(e->hp<=0){e->active=0;td_money+=12;td_kills++;}
+            } else if(d>0.001f){s->x+=(dx/d)*step;s->y+=(dy/d)*step;}
+        }
+    }
+}
+static void TD_DrawPath(void) {
+    int i;
+    for(i=0;i<7;i++) {
+        float x1=td_path_x[i],y1=td_path_y[i],x2=td_path_x[i+1],y2=td_path_y[i+1];
+        if(x1==x2) {
+            float y=y1<y2?y1:y2; CE_DrawRect(x1-10,y,20,(y1<y2?y2-y1:y1-y2),GU_COLOR(70,75,83,255));
+        } else {
+            float x=x1<x2?x1:x2; CE_DrawRect(x,y1-10,(x1<x2?x2-x1:x1-x2),20,GU_COLOR(70,75,83,255));
+        }
+    }
+    for(i=0;i<7;i++) {
+        if(td_path_x[i]==td_path_x[i+1]) {
+            float y=(td_path_y[i]+td_path_y[i+1])*0.5f;
+            CE_DrawRect(td_path_x[i]-1,y-3,2,6,GU_COLOR(230,205,120,255));
+        } else {
+            float x=(td_path_x[i]+td_path_x[i+1])*0.5f;
+            CE_DrawRect(x-3,td_path_y[i]-1,6,2,GU_COLOR(230,205,120,255));
+        }
+    }
+}
+static void TD_Render(void) {
+    int i;
+    sceGuStart(GU_DIRECT,g_displayList);
+    sceGuClearColor(GU_COLOR(28,75,52,255)); sceGuClear(GU_COLOR_BUFFER_BIT);
+    /* Subtle grass grid. */
+    for(i=0;i<16;i++) CE_DrawRect(i*32,0,1,CE_SCREEN_H,GU_COLOR(38,88,60,255));
+    for(i=0;i<9;i++) CE_DrawRect(0,i*32,CE_SCREEN_W,1,GU_COLOR(38,88,60,255));
+    TD_DrawPath();
+    for(i=0;i<TD_PAD_COUNT;i++) {
+        unsigned int c=(i==td_cursor)?GU_COLOR(255,220,80,255):GU_COLOR(155,175,145,255);
+        CE_DrawRect(td_pad_x[i]-9,td_pad_y[i]-9,18,18,c);
+        CE_DrawRect(td_pad_x[i]-5,td_pad_y[i]-5,10,10,GU_COLOR(35,48,38,255));
+    }
+    for(i=0;i<TD_MAX_TOWERS;i++) if(td_towers[i].active) {
+        TD_Tower *t=&td_towers[i];
+        unsigned int c=t->type==0?GU_COLOR(70,170,245,255):(t->type==1?GU_COLOR(90,220,145,255):GU_COLOR(235,125,70,255));
+        CE_DrawRect(t->x-8,t->y-8,16,16,c);
+        CE_DrawRect(t->x-3,t->y-3,6,6,GU_COLOR(245,245,230,255));
+        if(i==td_selected) {
+            CE_DrawRect(t->x-11,t->y-11,22,2,GU_COLOR(255,240,120,255));
+            CE_DrawRect(t->x-11,t->y+9,22,2,GU_COLOR(255,240,120,255));
+        }
+        CE_DrawRect(t->x-8,t->y+10,16,2,GU_COLOR(20,25,25,255));
+        CE_DrawRect(t->x-8,t->y+10,16.0f*t->level/5.0f,2,GU_COLOR(255,215,80,255));
+    }
+    for(i=0;i<TD_MAX_ENEMIES;i++) if(td_enemies[i].active) {
+        TD_Enemy *e=&td_enemies[i];
+        CE_DrawRect(e->x-5,e->y-5,10,10,GU_COLOR(190,65,70,255));
+        CE_DrawRect(e->x-5,e->y-8,10,2,GU_COLOR(45,25,25,255));
+        CE_DrawRect(e->x-5,e->y-8,10.0f*TD_Clamp((float)e->hp/e->maxHp,0,1),2,GU_COLOR(100,235,110,255));
+    }
+    for(i=0;i<TD_MAX_SHOTS;i++) if(td_shots[i].active)
+        CE_DrawRect(td_shots[i].x-2,td_shots[i].y-2,4,4,GU_COLOR(255,235,125,255));
+    /* Top status bar and bottom controls legend. */
+    CE_DrawRect(0,0,480,22,GU_COLOR(8,15,24,230));
+    CE_DrawRect(8,7,TD_Clamp((float)td_lives,0,20)*4.0f,7,GU_COLOR(235,75,85,255));
+    CE_DrawRect(100,7,TD_Clamp((float)td_money,0,300)*0.5f,7,GU_COLOR(245,195,65,255));
+    CE_DrawRect(270,7,TD_Clamp((float)td_wave,0,20)*7.0f,7,GU_COLOR(80,175,245,255));
+    CE_DrawRect(0,264,480,8,GU_COLOR(8,15,24,220));
+    /* Button key: Cross=build, Circle=wave, Square=upgrade, Triangle=sell. */
+    CE_DrawRect(8,266,8,4,GU_COLOR(70,220,145,255));
+    CE_DrawRect(24,266,8,4,GU_COLOR(90,175,245,255));
+    CE_DrawRect(40,266,8,4,GU_COLOR(245,195,65,255));
+    CE_DrawRect(56,266,8,4,GU_COLOR(235,115,90,255));
+    if(td_game_over) CE_DrawRect(150,112,180,44,GU_COLOR(115,25,35,235));
+    sceGuFinish(); sceGuSync(0,0); sceDisplayWaitVblankStart(); sceGuSwapBuffers();
+}
+
+
 /* Core timing and startup. */
 static void CE_UpdateTime(void) {
     unsigned long long now = sceKernelGetSystemTimeWide();
@@ -668,6 +934,7 @@ static void CE_Init(void) {
     sceCtrlSetSamplingCycle(0);
     sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
     CE_WorldInit();
+    TD_Init();
     CE_GraphicsInit();
     g_lastTime = sceKernelGetSystemTimeWide();
 }
@@ -682,23 +949,30 @@ int main(void) {
 
     while (g_running) {
         CE_UpdateTime();
-        CE_InputUpdate();
-
-        if (CE_ButtonPressed(PSP_CTRL_CIRCLE)) {
-            g_saveMessage = CE_Save() ? 45 : 0;
-        }
-        if (CE_ButtonPressed(PSP_CTRL_TRIANGLE)) {
-            if (CE_Load()) {
-                g_cursorX = CE_ClampI(g_cursorX,0,CE_MAP_W-1);
-                g_cursorY = CE_ClampI(g_cursorY,0,CE_MAP_H-1);
+        if (td_mode) {
+            TD_Input();
+            TD_Update(g_state.deltaTime);
+            TD_Render();
+        } else {
+            CE_InputUpdate();
+            if (CE_ButtonPressed(PSP_CTRL_SELECT)) {
+                td_mode = 1;
+                g_editor = 0;
             }
+            if (CE_ButtonPressed(PSP_CTRL_CIRCLE)) {
+                g_saveMessage = CE_Save() ? 45 : 0;
+            }
+            if (CE_ButtonPressed(PSP_CTRL_TRIANGLE)) {
+                if (CE_Load()) {
+                    g_cursorX = CE_ClampI(g_cursorX,0,CE_MAP_W-1);
+                    g_cursorY = CE_ClampI(g_cursorY,0,CE_MAP_H-1);
+                }
+            }
+            if (!g_editor) CE_UpdateObjects(g_state.deltaTime);
+            CE_UpdateCamera(g_state.deltaTime);
+            CE_Render();
+            if (g_saveMessage > 0) g_saveMessage--;
         }
-
-        if (!g_editor) CE_UpdateObjects(g_state.deltaTime);
-        CE_UpdateCamera(g_state.deltaTime);
-        CE_Render();
-
-        if (g_saveMessage > 0) g_saveMessage--;
     }
 
     CE_Shutdown();
