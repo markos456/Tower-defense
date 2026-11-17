@@ -738,6 +738,7 @@ static int td_towerCount,td_enemyCount;
 static int td_cursorX=1,td_cursorY=1,td_selected=-1,td_type=0;
 static int td_wave,td_money,td_lives,td_kills,td_bossKills,td_game_over,td_paused;
 static int td_modeIndex=1,td_mapIndex=0,td_menu=0,td_editor=0,td_editorNode=0;
+static int td_menuPage=0,td_menuItem=0;
 static int td_spawnLeft,td_spawned,td_spawnType,td_campaignRegion,td_campaignStage;
 static int td_challenge[6],td_challengeClaimed[6],td_bestWave,td_totalGames,td_waveComplete=1;
 static float td_spawnTimer,td_clock,td_betweenTimer;
@@ -1065,12 +1066,130 @@ static void TD_Sell(void){TD_Tower*t;if(td_selected<0||td_selected>=TD_MAX_TOWER
 static void TD_SaveGame(void){TD_Save*s=&td_saveBuffer;SceUID fd;memset(s,0,sizeof(*s));s->magic=0x54444335;s->version=5;s->mode=td_modeIndex;s->map=td_mapIndex;s->wave=td_wave;s->money=td_money;s->lives=td_lives;s->kills=td_kills;s->bossKills=td_bossKills;s->campaignRegion=td_campaignRegion;s->customCount=td_customCount;memcpy(s->customX,td_customX,sizeof(td_customX));memcpy(s->customY,td_customY,sizeof(td_customY));memcpy(s->towers,td_towers,sizeof(td_towers));fd=sceIoOpen(TD_SAVE_PATH,PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0777);if(fd>=0){sceIoWrite(fd,s,sizeof(*s));sceIoClose(fd);}}
 static void TD_LoadGame(void){TD_Save*s=&td_saveBuffer;SceUID fd=sceIoOpen(TD_SAVE_PATH,PSP_O_RDONLY,0777);if(fd<0)return;if(sceIoRead(fd,s,sizeof(*s))==(int)sizeof(*s)&&s->magic==0x54444335&&s->version==5){td_modeIndex=(int)TD_Clamp(s->mode,0,12);td_mapIndex=(int)TD_Clamp(s->map,0,20);td_wave=s->wave;td_money=s->money;td_lives=s->lives;td_kills=s->kills;td_bossKills=s->bossKills;td_campaignRegion=s->campaignRegion;td_customCount=(int)TD_Clamp(s->customCount,0,12);memcpy(td_customX,s->customX,sizeof(td_customX));memcpy(td_customY,s->customY,sizeof(td_customY));memcpy(td_towers,s->towers,sizeof(td_towers));td_towerCount=0;for(int i=0;i<TD_MAX_TOWERS;i++)if(td_towers[i].active)td_towerCount++;}sceIoClose(fd);}
 static void TD_ChallengeUpdate(void){int i;td_challengeValue[0]=td_kills;td_challengeValue[1]=td_bossKills;td_challengeValue[2]=td_wave;td_challengeValue[3]=td_towerCount;td_challengeValue[5]=td_bestWave;for(i=0;i<6;i++)if(!td_challengeClaimed[i]&&td_challengeValue[i]>=td_challengeGoals[i]){td_challengeClaimed[i]=1;td_money+=50+i*25;}}
-static void TD_Input(void){SceCtrlData p;int i;g_state.previousButtons=g_state.buttons;sceCtrlPeekBufferPositive(&p,1);g_state.buttons=p.Buttons;if(CE_ButtonPressed(PSP_CTRL_START)){td_paused=!td_paused;return;}if(td_menu){if(CE_ButtonPressed(PSP_CTRL_LEFT))td_modeIndex=(td_modeIndex+12)%13;if(CE_ButtonPressed(PSP_CTRL_RIGHT))td_modeIndex=(td_modeIndex+1)%13;if(CE_ButtonPressed(PSP_CTRL_UP))td_mapIndex=(td_mapIndex+19)%20;if(CE_ButtonPressed(PSP_CTRL_DOWN))td_mapIndex=(td_mapIndex+1)%20;if(CE_ButtonPressed(PSP_CTRL_CROSS)){TD_ResetGame();td_menu=0;}if(CE_ButtonPressed(PSP_CTRL_CIRCLE))TD_LoadGame();if(CE_ButtonPressed(PSP_CTRL_TRIANGLE)){td_editor=1;td_menu=0;td_customCount=0;td_mapIndex=20;td_cursorX=0;td_cursorY=7;}return;}if(CE_ButtonPressed(PSP_CTRL_SELECT)){td_menu=1;return;}if(td_editor){if(CE_ButtonPressed(PSP_CTRL_LEFT))td_cursorX=(td_cursorX+19)%20;if(CE_ButtonPressed(PSP_CTRL_RIGHT))td_cursorX=(td_cursorX+1)%20;if(CE_ButtonPressed(PSP_CTRL_UP))td_cursorY=(td_cursorY+14)%15;if(CE_ButtonPressed(PSP_CTRL_DOWN))td_cursorY=(td_cursorY+1)%15;if(CE_ButtonPressed(PSP_CTRL_CROSS)){if(td_customCount<12){td_customX[td_customCount]=td_cursorX;td_customY[td_customCount]=td_cursorY;td_customCount++;}}if(CE_ButtonPressed(PSP_CTRL_CIRCLE)){if(td_customCount>=2){td_mapIndex=20;td_editor=0;TD_ResetGame();}}if(CE_ButtonPressed(PSP_CTRL_TRIANGLE)){td_customCount=0;}return;}if(CE_ButtonPressed(PSP_CTRL_LEFT))td_cursorX=(td_cursorX+19)%20;if(CE_ButtonPressed(PSP_CTRL_RIGHT))td_cursorX=(td_cursorX+1)%20;if(CE_ButtonPressed(PSP_CTRL_UP))td_cursorY=(td_cursorY+14)%15;if(CE_ButtonPressed(PSP_CTRL_DOWN))td_cursorY=(td_cursorY+1)%15;if(CE_ButtonPressed(PSP_CTRL_LTRIGGER))td_type=(td_type+TD_TOWER_COUNT-1)%TD_TOWER_COUNT;if(CE_ButtonPressed(PSP_CTRL_RTRIGGER))td_type=(td_type+1)%TD_TOWER_COUNT;if(CE_ButtonPressed(PSP_CTRL_CROSS)){if((p.Buttons&PSP_CTRL_LTRIGGER)&&td_selected>=0)TD_AddRune(&td_towers[td_selected]);else TD_PlaceTower();}if(CE_ButtonPressed(PSP_CTRL_CIRCLE))TD_StartWave();if(CE_ButtonPressed(PSP_CTRL_SQUARE))TD_Upgrade();if(CE_ButtonPressed(PSP_CTRL_LTRIGGER)&&CE_ButtonPressed(PSP_CTRL_TRIANGLE))TD_SaveGame();else if(CE_ButtonPressed(PSP_CTRL_RTRIGGER)&&CE_ButtonPressed(PSP_CTRL_TRIANGLE))TD_LoadGame();else if(CE_ButtonPressed(PSP_CTRL_TRIANGLE))TD_Sell();if(CE_ButtonPressed(PSP_CTRL_HOME))td_editor=1;for(i=0;i<TD_MAX_TOWERS;i++)if(td_towers[i].active&&TD_Dist(td_towers[i].x,td_towers[i].y,td_cursorX*TD_CELL_W+12,TD_TOP+td_cursorY*TD_CELL_H+8)<13)td_selected=i;}
+static void TD_Input(void){
+    SceCtrlData p; int i;
+    g_state.previousButtons=g_state.buttons;
+    sceCtrlPeekBufferPositive(&p,1); g_state.buttons=p.Buttons;
+    if(td_menu){
+        if(td_menuPage==0){
+            if(CE_ButtonPressed(PSP_CTRL_LEFT)) td_menuItem=(td_menuItem/2)*2;
+            if(CE_ButtonPressed(PSP_CTRL_RIGHT)) td_menuItem=(td_menuItem/2)*2+1;
+            if(CE_ButtonPressed(PSP_CTRL_UP)) td_menuItem=(td_menuItem+6)%8;
+            if(CE_ButtonPressed(PSP_CTRL_DOWN)) td_menuItem=(td_menuItem+2)%8;
+            if(CE_ButtonPressed(PSP_CTRL_CROSS)){
+                if(td_menuItem==0) td_menuPage=1;
+                else if(td_menuItem==1){td_editor=1;td_menu=0;td_customCount=0;td_mapIndex=20;td_cursorX=0;td_cursorY=7;}
+                else td_menuPage=2;
+            }
+            if(CE_ButtonPressed(PSP_CTRL_CIRCLE)){TD_LoadGame();td_menu=0;}
+            if(CE_ButtonPressed(PSP_CTRL_START)) { TD_ResetGame(); td_menu=0; }
+        } else if(td_menuPage==1){
+            if(CE_ButtonPressed(PSP_CTRL_LEFT)) td_modeIndex=(td_modeIndex+12)%13;
+            if(CE_ButtonPressed(PSP_CTRL_RIGHT)) td_modeIndex=(td_modeIndex+1)%13;
+            if(CE_ButtonPressed(PSP_CTRL_UP)) td_mapIndex=(td_mapIndex+19)%20;
+            if(CE_ButtonPressed(PSP_CTRL_DOWN)) td_mapIndex=(td_mapIndex+1)%20;
+            if(CE_ButtonPressed(PSP_CTRL_CROSS)){TD_ResetGame();td_menu=0;td_menuPage=0;}
+            if(CE_ButtonPressed(PSP_CTRL_SQUARE)){TD_LoadGame();td_menu=0;td_menuPage=0;}
+            if(CE_ButtonPressed(PSP_CTRL_CIRCLE)) td_menuPage=0;
+            if(CE_ButtonPressed(PSP_CTRL_TRIANGLE)){td_editor=1;td_menu=0;td_menuPage=0;td_customCount=0;td_mapIndex=20;td_cursorX=0;td_cursorY=7;}
+        } else {
+            if(CE_ButtonPressed(PSP_CTRL_CIRCLE)||CE_ButtonPressed(PSP_CTRL_CROSS)) td_menuPage=0;
+            if(CE_ButtonPressed(PSP_CTRL_LEFT)||CE_ButtonPressed(PSP_CTRL_RIGHT)) td_menuItem=td_menuItem;
+        }
+        return;
+    }
+    if(CE_ButtonPressed(PSP_CTRL_START)){td_paused=!td_paused;return;}
+    if(CE_ButtonPressed(PSP_CTRL_SELECT)){td_menu=1;td_menuPage=0;td_menuItem=0;return;}
+    if(td_editor){if(CE_ButtonPressed(PSP_CTRL_LEFT))td_cursorX=(td_cursorX+19)%20;if(CE_ButtonPressed(PSP_CTRL_RIGHT))td_cursorX=(td_cursorX+1)%20;if(CE_ButtonPressed(PSP_CTRL_UP))td_cursorY=(td_cursorY+14)%15;if(CE_ButtonPressed(PSP_CTRL_DOWN))td_cursorY=(td_cursorY+1)%15;if(CE_ButtonPressed(PSP_CTRL_CROSS)){if(td_customCount<12){td_customX[td_customCount]=td_cursorX;td_customY[td_customCount]=td_cursorY;td_customCount++;}}if(CE_ButtonPressed(PSP_CTRL_CIRCLE)){if(td_customCount>=2){td_mapIndex=20;td_editor=0;TD_ResetGame();}}if(CE_ButtonPressed(PSP_CTRL_TRIANGLE)){td_customCount=0;}return;}if(CE_ButtonPressed(PSP_CTRL_LEFT))td_cursorX=(td_cursorX+19)%20;if(CE_ButtonPressed(PSP_CTRL_RIGHT))td_cursorX=(td_cursorX+1)%20;if(CE_ButtonPressed(PSP_CTRL_UP))td_cursorY=(td_cursorY+14)%15;if(CE_ButtonPressed(PSP_CTRL_DOWN))td_cursorY=(td_cursorY+1)%15;if(CE_ButtonPressed(PSP_CTRL_LTRIGGER))td_type=(td_type+TD_TOWER_COUNT-1)%TD_TOWER_COUNT;if(CE_ButtonPressed(PSP_CTRL_RTRIGGER))td_type=(td_type+1)%TD_TOWER_COUNT;if(CE_ButtonPressed(PSP_CTRL_CROSS)){if((p.Buttons&PSP_CTRL_LTRIGGER)&&td_selected>=0)TD_AddRune(&td_towers[td_selected]);else TD_PlaceTower();}if(CE_ButtonPressed(PSP_CTRL_CIRCLE))TD_StartWave();if(CE_ButtonPressed(PSP_CTRL_SQUARE))TD_Upgrade();if(CE_ButtonPressed(PSP_CTRL_LTRIGGER)&&CE_ButtonPressed(PSP_CTRL_TRIANGLE))TD_SaveGame();else if(CE_ButtonPressed(PSP_CTRL_RTRIGGER)&&CE_ButtonPressed(PSP_CTRL_TRIANGLE))TD_LoadGame();else if(CE_ButtonPressed(PSP_CTRL_TRIANGLE))TD_Sell();if(CE_ButtonPressed(PSP_CTRL_HOME))td_editor=1;for(i=0;i<TD_MAX_TOWERS;i++)if(td_towers[i].active&&TD_Dist(td_towers[i].x,td_towers[i].y,td_cursorX*TD_CELL_W+12,TD_TOP+td_cursorY*TD_CELL_H+8)<13)td_selected=i;}
 static void TD_Update(float dt){int i,j;if(td_paused||td_menu||td_editor||td_game_over)return;td_clock+=dt;if(td_spawnLeft>0){td_spawnTimer-=dt;if(td_spawnTimer<=0){int type=TD_SelectEnemyType();if(TD_AddEnemy(type)>=0){td_spawnLeft--;td_spawned++;}td_spawnTimer=td_modes[td_modeIndex].flags&1?1.3f:.48f;}}for(i=0;i<TD_MAX_ENEMIES;i++)if(td_enemies[i].active){TD_Enemy*e=&td_enemies[i];float tx,ty,dx,dy,d,step;int n=TD_PathCount();if(e->hp<=0){e->active=0;td_money+=td_enemyDefs[e->type].reward;td_kills++;if(e->flags&TD_E_BOSS)td_bossKills++;continue;}if(e->burnTimer>0){e->burnTimer-=dt;e->hp-=(int)(e->burnDmg*dt);if(e->hp<=0)continue;}if(e->poisonTimer>0){e->poisonTimer-=dt;e->hp-=(int)(e->poisonDmg*dt);}if(e->slowTimer>0)e->slowTimer-=dt;if(e->waypoint>=n){e->active=0;td_lives-=td_enemyDefs[e->type].leak;td_waveLeak=1;if(td_lives<=0)td_game_over=1;continue;}TD_GetPathPoint(e->waypoint,&tx,&ty);dx=tx-e->x;dy=ty-e->y;d=sqrtf(dx*dx+dy*dy);step=e->speed*(e->slowTimer>0?.55f:1.0f)*dt;if(d<step+2){e->waypoint++;}else if(d>0.01f){e->x+=dx/d*step;e->y+=dy/d*step;}}
 for(i=0;i<TD_MAX_TOWERS;i++)if(td_towers[i].active){TD_Tower*t=&td_towers[i];int target=-1;float best=-1,damage=t->damage,range=t->range,rate=t->rate;int flags=0;if(td_defs[t->type].support)continue;flags=td_defs[t->type].effects;for(j=0;j<t->runeCount;j++){TD_Rune*r=&t->runes[j];if(r->kind==TD_RUNE_DAMAGE)damage*=r->power;else if(r->kind==TD_RUNE_RANGE)range*=r->power;else if(r->kind==TD_RUNE_RATE)rate*=r->power;else if(r->kind==TD_RUNE_SPLASH)flags|=TD_SHOT_SPLASH;}for(j=0;j<TD_MAX_TOWERS;j++)if(td_towers[j].active&&td_defs[td_towers[j].type].support&&TD_Dist(t->x,t->y,td_towers[j].x,td_towers[j].y)<td_towers[j].range){damage*=1.08f;rate*=.96f;}t->cooldown-=dt;if(t->cooldown>0)continue;for(j=0;j<TD_MAX_ENEMIES;j++)if(td_enemies[j].active&&(!(td_enemies[j].flags&TD_E_INVISIBLE)||td_radarBuilt)){float d=TD_Dist(t->x,t->y,td_enemies[j].x,td_enemies[j].y);if(d<=range&&(target<0||td_enemies[j].waypoint>best)){target=j;best=(float)td_enemies[j].waypoint;}}if(target>=0&&TD_AddShot(t->x,t->y,target,damage,td_defs[t->type].splash,flags)>=0)t->cooldown=rate;}
 for(i=0;i<TD_MAX_SHOTS;i++)if(td_shots[i].active){TD_Shot*s=&td_shots[i];if(s->target<0||s->target>=TD_MAX_ENEMIES||!td_enemies[s->target].active){s->active=0;continue;}{TD_Enemy*e=&td_enemies[s->target];float dx=e->x-s->x,dy=e->y-s->y,d=sqrtf(dx*dx+dy*dy),step=s->speed*dt;if(d<=step+e->x*0.0f+4){int damage=(int)s->damage;if(e->flags&TD_E_ARMORED)damage=(damage*85)/100;if(damage<1)damage=1;e->hp-=damage;if(s->flags&TD_SHOT_SLOW)e->slowTimer=1.5f;if(s->flags&TD_SHOT_BURN){e->burnTimer=2.5f;e->burnDmg=4;}if(s->flags&TD_SHOT_POISON){e->poisonTimer=3;e->poisonDmg=3;}if(s->flags&TD_SHOT_SPLASH){float rad=s->splash>0?s->splash:44.0f;for(j=0;j<TD_MAX_ENEMIES;j++)if(j!=s->target&&td_enemies[j].active&&TD_Dist(e->x,e->y,td_enemies[j].x,td_enemies[j].y)<rad)td_enemies[j].hp-=damage/2;}if(s->flags&TD_SHOT_PIERCE){s->target=-1;s->active=0;}else s->active=0;}else if(d>0.01f){s->x+=dx/d*step;s->y+=dy/d*step;}}}
 if(td_spawnLeft==0&&TD_AliveEnemies()==0&&td_wave>0&&!td_waveComplete){td_waveComplete=1;if(!td_waveLeak)td_challengeValue[4]++;if(td_modeIndex==12){td_campaignRegion=(td_wave-1)/10;if(td_wave>=100)td_game_over=1;else td_money+=100;}}if(td_wave>td_bestWave)td_bestWave=td_wave;TD_ChallengeUpdate();}
 static void TD_DrawPath(void){int i,n=TD_PathCount();for(i=0;i<n-1;i++){float ax,ay,bx,by;if(td_mapIndex==20){ax=td_customX[i]*TD_CELL_W+12;ay=TD_TOP+td_customY[i]*TD_CELL_H+8;bx=td_customX[i+1]*TD_CELL_W+12;by=TD_TOP+td_customY[i+1]*TD_CELL_H+8;}else{TD_GetPathPoint(i,&ax,&ay);TD_GetPathPoint(i+1,&bx,&by);}if(fabsf(ax-bx)<1)CE_DrawRect(ax-5,ay<by?ay:by,10,fabsf(by-ay),GU_COLOR(110,103,85,255));else CE_DrawRect(ax<bx?ax:bx,ay-5,fabsf(bx-ax),10,GU_COLOR(110,103,85,255));}}
+static void TD_MenuTextCenter(int y,const char *str,float scale,unsigned int color){
+    int n=(int)strlen(str); float w=(float)n*6.0f*scale;
+    CE_DrawText((480.0f-w)*0.5f,(float)y,str,scale,color);
+}
+static void TD_MenuButton(int x,int y,int w,int h,const char *label,unsigned int fill,int selected){
+    unsigned int edge=selected?GU_COLOR(105,220,255,255):GU_COLOR(85,105,135,255);
+    CE_DrawRect((float)x-1,(float)y-1,(float)w+2,(float)h+2,edge);
+    CE_DrawRect((float)x,(float)y,(float)w,(float)h,fill);
+    if(selected) CE_DrawRect((float)x+3,(float)y+3,(float)w-6,2,GU_COLOR(170,235,255,255));
+    CE_DrawText((float)(x+8),(float)(y+(h-7)/2),label,1.0f,GU_COLOR(242,246,255,255));
+}
+static void TD_RenderMainMenu(void){
+    static const char *labels[8]={"PLAY","MAP EDITOR","CHALLENGES","WORLD & RESEARCH","MY BASE","SKINS & CASES","ACHIEVEMENTS","SETTINGS"};
+    static const unsigned int colors[8]={GU_COLOR(29,92,58,255),GU_COLOR(35,75,104,255),GU_COLOR(90,59,34,255),GU_COLOR(35,75,85,255),GU_COLOR(61,49,95,255),GU_COLOR(74,49,93,255),GU_COLOR(57,69,42,255),GU_COLOR(48,56,75,255)};
+    int i,x,y;
+    /* Opaque navy gradient approximation, matching the browser menu. */
+    for(i=0;i<16;i++) CE_DrawRect(0,(float)(i*17),480,18,GU_COLOR(10-i/3,16-i/3,36-i,255));
+    for(i=0;i<40;i++){
+        int dx=8+(i%20)*24,dy=245+(i/20)*14;
+        unsigned int c=GU_COLOR(35+(i*37)%90,45+(i*53)%90,70+(i*29)%110,115);
+        CE_DrawRect((float)dx,(float)dy,7,7,c);
+    }
+    if(td_menuPage==0){
+        TD_MenuTextCenter(20,"TOWER DEFENSE",2.0f,GU_COLOR(234,242,255,255));
+        TD_MenuTextCenter(43,"MEGA UPDATE 1.3  -  PSP EDITION",0.8f,GU_COLOR(143,163,197,255));
+        TD_MenuTextCenter(53,"188 TOWERS  -  20 MAPS  -  13 MODES",0.75f,GU_COLOR(115,140,180,255));
+        for(i=0;i<8;i++){
+            x=24+(i%2)*216; y=67+(i/2)*38;
+            TD_MenuButton(x,y,204,30,labels[i],colors[i],i==td_menuItem);
+        }
+        TD_MenuTextCenter(224,"20 MAPS   -   13 MODES   -   6 CHALLENGES",0.8f,GU_COLOR(255,213,79,255));
+        TD_MenuTextCenter(237,"BEST WAVE",0.75f,GU_COLOR(159,176,204,255));
+        CE_DrawNumber(278,237,td_bestWave,1,GU_COLOR(255,213,79,255));
+        TD_MenuTextCenter(249,"TD V6 PORT  -  CAMPAIGN  -  PSP EDITION",0.75f,GU_COLOR(77,208,225,255));
+        TD_MenuTextCenter(261,"DPAD SELECT   X OPEN   O LOAD   START QUICK PLAY",0.65f,GU_COLOR(77,88,117,255));
+    } else if(td_menuPage==1){
+        TD_MenuTextCenter(26,"SELECT GAME MODE",2.0f,GU_COLOR(234,242,255,255));
+        TD_MenuTextCenter(57,"LEFT / RIGHT  -  MODE",0.9f,GU_COLOR(143,163,197,255));
+        TD_MenuTextCenter(82,"MODE NUMBER",0.8f,GU_COLOR(220,230,245,255));
+        CE_DrawNumber(278,82,td_modeIndex+1,1,GU_COLOR(255,213,79,255));
+        TD_MenuTextCenter(113,"UP / DOWN  -  MAP",0.9f,GU_COLOR(143,163,197,255));
+        TD_MenuTextCenter(138,"MAP NUMBER",0.8f,GU_COLOR(220,230,245,255));
+        CE_DrawNumber(278,138,td_mapIndex+1,1,GU_COLOR(77,208,225,255));
+        CE_DrawRect(54,164,372,1,GU_COLOR(80,110,145,255));
+        TD_MenuTextCenter(180,"X START GAME",1.0f,GU_COLOR(105,245,155,255));
+        TD_MenuTextCenter(198,"SQUARE LOAD SAVE",0.9f,GU_COLOR(255,213,79,255));
+        TD_MenuTextCenter(216,"TRIANGLE MAP EDITOR",0.9f,GU_COLOR(150,195,255,255));
+        TD_MenuTextCenter(246,"O BACK TO MAIN MENU",0.9f,GU_COLOR(180,190,210,255));
+    } else {
+        TD_MenuTextCenter(25,labels[td_menuItem],1.6f,GU_COLOR(234,242,255,255));
+        CE_DrawRect(34,52,412,1,GU_COLOR(77,208,225,255));
+        if(td_menuItem==2){
+            TD_MenuTextCenter(72,"CHALLENGE PROGRESS",1.0f,GU_COLOR(255,213,79,255));
+            TD_MenuTextCenter(100,"KILLS",0.9f,GU_COLOR(220,230,245,255));CE_DrawNumber(260,100,td_kills,1,GU_COLOR(255,255,255,255));
+            TD_MenuTextCenter(122,"BOSS KILLS",0.9f,GU_COLOR(220,230,245,255));CE_DrawNumber(260,122,td_bossKills,1,GU_COLOR(255,255,255,255));
+            TD_MenuTextCenter(144,"BEST WAVE",0.9f,GU_COLOR(220,230,245,255));CE_DrawNumber(260,144,td_bestWave,1,GU_COLOR(255,255,255,255));
+            TD_MenuTextCenter(177,"6 CHALLENGES IN PSP PORT",0.8f,GU_COLOR(77,208,225,255));
+        } else if(td_menuItem==3){
+            TD_MenuTextCenter(80,"CAMPAIGN MODE",1.1f,GU_COLOR(77,208,225,255));
+            TD_MenuTextCenter(112,"100 WAVES TARGET",0.9f,GU_COLOR(220,230,245,255));
+            TD_MenuTextCenter(144,"REGION",0.9f,GU_COLOR(220,230,245,255));CE_DrawNumber(260,144,td_campaignRegion+1,1,GU_COLOR(255,213,79,255));
+        } else if(td_menuItem==4){
+            TD_MenuTextCenter(80,"BASE SUPPORT",1.1f,GU_COLOR(77,208,225,255));
+            TD_MenuTextCenter(112,"SUPPORT TOWERS ARE AVAILABLE",0.8f,GU_COLOR(220,230,245,255));
+            TD_MenuTextCenter(134,"IN THE TOWER CATALOG",0.8f,GU_COLOR(220,230,245,255));
+        } else if(td_menuItem==5){
+            TD_MenuTextCenter(80,"SKINS AND CASES",1.1f,GU_COLOR(77,208,225,255));
+            TD_MenuTextCenter(112,"NOT YET PORTED TO PSP",0.9f,GU_COLOR(255,213,79,255));
+        } else if(td_menuItem==6){
+            TD_MenuTextCenter(80,"PLAYER RECORD",1.1f,GU_COLOR(77,208,225,255));
+            TD_MenuTextCenter(112,"TOTAL KILLS",0.9f,GU_COLOR(220,230,245,255));CE_DrawNumber(260,112,td_kills,1,GU_COLOR(255,255,255,255));
+            TD_MenuTextCenter(134,"BOSS KILLS",0.9f,GU_COLOR(220,230,245,255));CE_DrawNumber(260,134,td_bossKills,1,GU_COLOR(255,255,255,255));
+            TD_MenuTextCenter(156,"BEST WAVE",0.9f,GU_COLOR(220,230,245,255));CE_DrawNumber(260,156,td_bestWave,1,GU_COLOR(255,255,255,255));
+        } else {
+            TD_MenuTextCenter(80,"SETTINGS",1.1f,GU_COLOR(77,208,225,255));
+            TD_MenuTextCenter(112,"PSP BUTTON CONTROLS",0.9f,GU_COLOR(220,230,245,255));
+            TD_MenuTextCenter(134,"X CONFIRM   O BACK",0.9f,GU_COLOR(220,230,245,255));
+            TD_MenuTextCenter(156,"SELECT OPENS MENU",0.9f,GU_COLOR(220,230,245,255));
+        }
+        TD_MenuTextCenter(230,"X OR O - BACK",1.0f,GU_COLOR(255,213,79,255));
+        TD_MenuTextCenter(250,"COAST ENGINE PSP",0.8f,GU_COLOR(77,208,225,255));
+    }
+}
+
 static void TD_Render(void) {
     int i;
     unsigned int bg=GU_COLOR(38,82,55,255);
@@ -1113,29 +1232,13 @@ static void TD_Render(void) {
     CE_DrawText(145,265,"L RUNE",1,GU_COLOR(235,180,255,255));
     CE_DrawText(225,265,"SEL MENU",1,GU_COLOR(255,220,130,255));
     CE_DrawRect(td_cursorX*TD_CELL_W+2,TD_TOP+td_cursorY*TD_CELL_H+2,20,12,GU_COLOR(255,255,255,55));
-    if(td_menu) {
-        CE_DrawRect(44,36,392,194,GU_COLOR(7,13,27,248));
-        CE_DrawRect(55,48,370,3,GU_COLOR(65,190,225,255));
-        CE_DrawText(139,60,"HAMLET TD",2,GU_COLOR(255,225,135,255));
-        CE_DrawText(82,91,"COAST ENGINE V1.0",1,GU_COLOR(130,215,245,255));
-        CE_DrawText(70,116,"MODE",1,GU_COLOR(170,190,220,255));
-        CE_DrawText(130,116,"LEFT RIGHT",1,GU_COLOR(255,255,255,255));
-        CE_DrawNumber(365,116,td_modeIndex+1,1,GU_COLOR(255,220,110,255));
-        CE_DrawText(70,132,"MAP",1,GU_COLOR(170,190,220,255));
-        CE_DrawNumber(130,132,td_mapIndex+1,1,GU_COLOR(255,255,255,255));
-        CE_DrawText(70,148,"UP DOWN SELECT MAP",1,GU_COLOR(210,220,235,255));
-        CE_DrawRect(65,166,350,1,GU_COLOR(80,110,145,255));
-        CE_DrawText(70,178,"X START GAME",1,GU_COLOR(105,245,155,255));
-        CE_DrawText(235,178,"O LOAD SAVE",1,GU_COLOR(255,215,115,255));
-        CE_DrawText(70,194,"TRIANGLE MAP EDITOR",1,GU_COLOR(150,195,255,255));
-        CE_DrawText(70,211,"START PAUSE   SELECT MENU",1,GU_COLOR(160,175,200,255));
-    }
-    if(td_paused) {
+    if(td_menu) TD_RenderMainMenu();
+    if(td_paused&&!td_menu) {
         CE_DrawRect(145,103,190,62,GU_COLOR(8,14,28,245));
         CE_DrawText(205,116,"PAUSED",2,GU_COLOR(255,220,120,255));
         CE_DrawText(170,143,"START RESUME",1,GU_COLOR(255,255,255,255));
     }
-    if(td_game_over) {
+    if(td_game_over&&!td_menu) {
         CE_DrawRect(130,99,220,72,GU_COLOR(65,12,24,248));
         CE_DrawText(174,111,"GAME OVER",2,GU_COLOR(255,130,130,255));
         CE_DrawText(169,139,"WAVE",1,GU_COLOR(255,255,255,255));
@@ -1174,7 +1277,7 @@ static void CE_Init(void) {
     CE_WorldInit();
     TD_InitDefs();
     td_towerCount=0; td_enemyCount=ENEMY_TYPE_COUNT;
-    td_menu=1; td_modeIndex=1; td_mapIndex=0;
+    td_menu=1; td_menuPage=0; td_menuItem=0; td_modeIndex=1; td_mapIndex=0;
     td_customCount=0; td_campaignRegion=0; td_bestWave=0;
     td_rng=(unsigned int)sceKernelGetSystemTimeLow();
     TD_ResetGame();
