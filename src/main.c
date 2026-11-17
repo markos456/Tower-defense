@@ -6,7 +6,7 @@
 #include <pspdisplay.h>
 #include <pspge.h>
 #include <pspctrl.h>
-#include<math.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -32,7 +32,6 @@ static void setup_callbacks(void) {
 #define BUFW 512
 #define RGB(r, g, b) (0xFF000000u | ((unsigned)(b) << 16) | ((unsigned)(g) << 8) | (unsigned)(r))
 
-typedef unsigned int u32;
 static int cur_buf = 0;
 
 static u32 *drawbuf(void) { return (u32 *)(0x44000000 + cur_buf * BUFW * SH * 4); }
@@ -131,7 +130,8 @@ static void build_map(void) {
                 float ax = PX[i], ay = PY[i], bx = PX[i + 1], by = PY[i + 1];
                 float dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
                 float t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
-                if (t < 0) t = 0; if (t > 1) t = 1;
+                if (t < 0) t = 0;
+                if (t > 1) t = 1;
                 float d = hypotf(px - (ax + t * dx), py - (ay + t * dy));
                 if (d < best) best = d;
             }
@@ -313,19 +313,25 @@ int main(void) {
         sceCtrlReadBufferPositive(&pad, 1);
         unsigned b = pad.Buttons, edge = b & ~prev;
         int dx = 0, dy = 0;
-        if (edge & PSP_CTRL_LEFT) dx = -1;  if (edge & PSP_CTRL_RIGHT) dx = 1;
-        if (edge & PSP_CTRL_UP) dy = -1;    if (edge & PSP_CTRL_DOWN) dy = 1;
+        if (edge & PSP_CTRL_LEFT)  dx = -1;
+        if (edge & PSP_CTRL_RIGHT) dx = 1;
+        if (edge & PSP_CTRL_UP)    dy = -1;
+        if (edge & PSP_CTRL_DOWN)  dy = 1;
         if (b & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT | PSP_CTRL_UP | PSP_CTRL_DOWN)) {
             hold += dt;
             if (hold > 0.3f && !(edge)) {   /* автоповтор при удержании */
                 hold = 0.22f;
-                if (b & PSP_CTRL_LEFT) dx = -1;  if (b & PSP_CTRL_RIGHT) dx = 1;
-                if (b & PSP_CTRL_UP) dy = -1;    if (b & PSP_CTRL_DOWN) dy = 1;
+                if (b & PSP_CTRL_LEFT)  dx = -1;
+                if (b & PSP_CTRL_RIGHT) dx = 1;
+                if (b & PSP_CTRL_UP)    dy = -1;
+                if (b & PSP_CTRL_DOWN)  dy = 1;
             }
         } else hold = 0;
         ccx += dx; ccy += dy;
-        if (ccx < 0) ccx = 0; if (ccx >= COLS) ccx = COLS - 1;
-        if (ccy < 0) ccy = 0; if (ccy >= ROWS) ccy = ROWS - 1;
+        if (ccx < 0) ccx = 0;
+        if (ccx >= COLS) ccx = COLS - 1;
+        if (ccy < 0) ccy = 0;
+        if (ccy >= ROWS) ccy = ROWS - 1;
 
         if (over) {
             if (edge & PSP_CTRL_START) new_game();
