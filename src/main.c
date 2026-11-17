@@ -1,4 +1,4 @@
-*
+/*
  * COAST ENGINE v1.0 ULTIMATE FOUNDATION + WORLD + TD
  * PSP single-file engine expansion
  *
